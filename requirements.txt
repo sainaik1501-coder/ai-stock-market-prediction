@@ -8,3 +8,6 @@ numpy
 scikit-learn
 scipy
 vaderSentiment
+
+tensorflow
+
