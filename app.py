@@ -284,5 +284,58 @@ if st.button("Optimize Portfolio"):
 
         except Exception as e:
             st.error(f"Portfolio analysis failed: {e}")
+
+
+# ==========================================
+# FINANCIAL NEWS SENTIMENT ANALYSIS
+# ==========================================
+
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+st.divider()
+st.header("Financial News Sentiment Analysis")
+
+st.write(
+    "Enter a financial headline to estimate its sentiment. "
+    "This starter feature does not fetch live news."
+)
+
+@st.cache_resource
+def load_sentiment_analyzer():
+    return SentimentIntensityAnalyzer()
+
+analyzer = load_sentiment_analyzer()
+
+headline = st.text_area(
+    "Enter a financial news headline",
+    placeholder="Example: The company reports stronger quarterly profits."
+)
+
+if st.button("Analyze Sentiment"):
+    if not headline.strip():
+        st.warning("Please enter a headline first.")
+    else:
+        scores = analyzer.polarity_scores(headline)
+        compound = scores["compound"]
+
+        if compound >= 0.05:
+            sentiment = "Positive"
+        elif compound <= -0.05:
+            sentiment = "Negative"
+        else:
+            sentiment = "Neutral"
+
+        st.subheader(f"Sentiment: {sentiment}")
+        st.metric("Sentiment score", f"{compound:.3f}")
+
+        st.write("Detailed scores")
+        st.json(scores)
+
+        st.caption(
+            "This is a basic text-analysis tool, not a "
+            "financial recommendation. VADER may misread "
+            "financial language, sarcasm, or context."
+)
+        
             
     
