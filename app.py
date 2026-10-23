@@ -114,4 +114,174 @@ if st.button("Compare Models"):
 
     except Exception as e:
         st.error(f"Error: {e}")
+
+
+# ==========================================
+# PORTFOLIO OPTIMIZATION
+# ==========================================
+
+st.divider()
+st.header("Portfolio Optimization")
+st.write(
+    "Compare an equal-weight portfolio with a "
+    "mathematically optimized portfolio."
+)
+
+if st.button("Optimize Portfolio"):
+    with st.spinner("Analyzing portfolio..."):
+        try:
+            tickers = [
+                "RELIANCE.NS",
+                "TCS.NS",
+                "INFY.NS"
+            ]
+
+            price_data = {}
+
+            for symbol in tickers:
+                stock = yf.download(
+                    symbol,
+                    period="5y",
+                    auto_adjust=True,
+                    progress=False
+                )
+
+                if not stock.empty:
+                    close = stock["Close"]
+
+                    if isinstance(close, pd.DataFrame):
+                        close = close.iloc[:, 0]
+
+                    price_data[symbol] = close
+
+            prices = pd.DataFrame(price_data).dropna()
+
+            if len(prices) < 100 or len(price_data) != 3:
+                st.error(
+                    "Insufficient data. Please try again later."
+                )
+                st.stop()
+
+            # Calculate daily percentage returns
+            returns = prices.pct_change().dropna()
+
+            # Annualized estimates using 252 trading days
+            mean_returns = returns.mean() * 252
+            covariance = returns.cov() * 252
+
+            number_of_stocks = len(tickers)
+            equal_weights = np.repeat(
+                1 / number_of_stocks,
+                number_of_stocks
+            )
+
+            risk_free_rate = 0.04
+
+            def portfolio_stats(weights):
+                annual_return = np.dot(
+                    weights, mean_returns.to_numpy()
+                )
+
+                annual_volatility = np.sqrt(
+                    weights @ covariance.to_numpy() @ weights
+                )
+
+                sharpe = (
+                    (annual_return - risk_free_rate)
+                    / annual_volatility
+                    if annual_volatility > 0
+                    else 0
+                )
+
+                return (
+                    annual_return,
+                    annual_volatility,
+                    sharpe
+                )
+
+            def negative_sharpe(weights):
+                return -portfolio_stats(weights)[2]
+
+            result = minimize(
+                negative_sharpe,
+                equal_weights,
+                method="SLSQP",
+                bounds=[(0, 1)] * number_of_stocks,
+                constraints={
+                    "type": "eq",
+                    "fun": lambda weights: np.sum(weights) - 1
+                }
+            )
+
+            if not result.success:
+                st.error(
+                    "Optimization did not converge. "
+                    "Please try again."
+                )
+                st.stop()
+
+            optimized_weights = result.x
+
+            equal_stats = portfolio_stats(equal_weights)
+            optimized_stats = portfolio_stats(optimized_weights)
+
+            comparison = pd.DataFrame({
+                "Equal Weight": equal_weights,
+                "Optimized": optimized_weights
+            }, index=tickers)
+
+            st.subheader("Portfolio Weights")
+            st.dataframe(
+                comparison.style.format("{:.1%}"),
+                use_container_width=True
+            )
+
+            st.bar_chart(comparison)
+
+            summary = pd.DataFrame({
+                "Portfolio": [
+                    "Equal Weight",
+                    "Optimized"
+                ],
+                "Annualized Return": [
+                    equal_stats[0],
+                    optimized_stats[0]
+                ],
+                "Annualized Volatility": [
+                    equal_stats[1],
+                    optimized_stats[1]
+                ],
+                "Sharpe Ratio": [
+                    equal_stats[2],
+                    optimized_stats[2]
+                ]
+            })
+
+            st.subheader("Portfolio Comparison")
+            st.dataframe(
+                summary.style.format({
+                    "Annualized Return": "{:.2%}",
+                    "Annualized Volatility": "{:.2%}",
+                    "Sharpe Ratio": "{:.3f}"
+                }),
+                use_container_width=True
+            )
+
+            st.download_button(
+                "Download Portfolio Results",
+                summary.to_csv(index=False).encode("utf-8"),
+                file_name="portfolio_results.csv",
+                mime="text/csv"
+            )
+
+            st.caption(
+                "Estimates use historical daily returns and a "
+                "4% assumed annual risk-free rate. They exclude "
+                "transaction costs, taxes and slippage. "
+                "Optimized weights are not investment advice."
+            )
+
+        except Exception as e:
+            st.error(f"Portfolio analysis failed: {e}")
+            
     
