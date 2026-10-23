@@ -473,5 +473,139 @@ if st.button("Train LSTM Model"):
                 "a screenshot of the full error."
 )
             
+# ==========================================
+# DEEP LEARNING: GRU MODEL
+# ==========================================
+
+st.divider()
+st.header("Deep Learning: GRU Model")
+
+st.write(
+    "GRU learns patterns from the previous 20 stock closing prices."
+)
+
+if st.button("Train GRU Model"):
+    with st.spinner("Training GRU model. Please wait..."):
+        try:
+            import tensorflow as tf
+            from sklearn.preprocessing import MinMaxScaler
+            from sklearn.metrics import mean_absolute_error
+            from tensorflow.keras.models import Sequential
+            from tensorflow.keras.layers import Input, GRU, Dense
+            from tensorflow.keras.callbacks import EarlyStopping
+
+            tf.keras.utils.set_random_seed(42)
+
+            prices = get_prices(ticker)
+
+            if len(prices) < 150:
+                st.error("Not enough historical data.")
+                st.stop()
+
+            values = prices.to_numpy(dtype=float).reshape(-1, 1)
+            split = int(len(values) * 0.8)
+
+            scaler = MinMaxScaler()
+            scaler.fit(values[:split])
+            scaled = scaler.transform(values)
+
+            window = 20
+            X, y = [], []
+
+            for i in range(window, len(scaled)):
+                X.append(scaled[i-window:i, 0])
+                y.append(scaled[i, 0])
+
+            X = np.array(X).reshape(-1, window, 1)
+            y = np.array(y)
+
+            train_end = split - window
+            X_train, X_test = X[:train_end], X[train_end:]
+            y_train, y_test = y[:train_end], y[train_end:]
+
+            model = Sequential([
+                Input(shape=(window, 1)),
+                GRU(32),
+                Dense(16, activation="relu"),
+                Dense(1)
+            ])
+
+            model.compile(
+                optimizer="adam",
+                loss="mean_squared_error"
+            )
+
+            early_stop = EarlyStopping(
+                monitor="val_loss",
+                patience=3,
+                restore_best_weights=True
+            )
+
+            model.fit(
+                X_train,
+                y_train,
+                epochs=20,
+                batch_size=32,
+                validation_split=0.1,
+                shuffle=False,
+                callbacks=[early_stop],
+                verbose=0
+            )
+
+            scaled_predictions = model.predict(X_test, verbose=0)
+
+            predictions = scaler.inverse_transform(
+                scaled_predictions
+            ).ravel()
+
+            actual = scaler.inverse_transform(
+                y_test.reshape(-1, 1)
+            ).ravel()
+
+            mae = mean_absolute_error(actual, predictions)
+
+            st.success("GRU training completed!")
+            st.metric("GRU Test MAE", f"₹{mae:.2f}")
+
+            results = pd.DataFrame({
+                "Actual Price": actual,
+                "GRU Prediction": predictions
+            })
+
+            st.line_chart(results)
+
+            latest_sequence = scaled[-window:].reshape(
+                1, window, 1
+            )
+
+            next_scaled = model.predict(
+                latest_sequence, verbose=0
+            )
+
+            next_price = scaler.inverse_transform(
+                next_scaled
+            )[0, 0]
+
+            st.metric(
+                "Experimental GRU next-day estimate",
+                f"₹{next_price:,.2f}"
+            )
+
+            st.download_button(
+                "Download GRU Results",
+                results.to_csv(index=False).encode("utf-8"),
+                file_name="gru_results.csv",
+                mime="text/csv"
+            )
+
+            st.caption(
+                "Educational experiment only. This estimate is "
+                "not financial advice."
+            )
+
+        except Exception as e:
+            st.error(f"GRU error: {e}")
+            
+            
             
     
