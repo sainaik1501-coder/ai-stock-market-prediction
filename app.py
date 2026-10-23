@@ -4,22 +4,14 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-st.set_page_config(
-    page_title="AI Stock Prediction",
-    page_icon="📈",
-    layout="wide"
-)
-
+st.set_page_config(page_title="AI Stock Prediction", layout="wide")
 st.title("AI-Based Stock Market Prediction")
 st.write("First-Year B.Tech AI/ML Project")
-
-st.warning(
-    "Educational project only. Predictions are experimental "
-    "and are not financial advice."
-)
+st.warning("Educational use only — not financial advice.")
 
 ticker = st.selectbox(
     "Select a company",
@@ -27,160 +19,96 @@ ticker = st.selectbox(
 )
 
 @st.cache_data(ttl=3600)
-def get_stock_data(symbol):
+def get_prices(symbol):
     data = yf.download(
-        symbol,
-        period="5y",
-        auto_adjust=True,
-        progress=False
+        symbol, period="5y", auto_adjust=True, progress=False
     )
-
     if data.empty:
         return pd.Series(dtype=float)
 
     close = data["Close"]
-
     if isinstance(close, pd.DataFrame):
         close = close.iloc[:, 0]
 
-    close = pd.to_numeric(close, errors="coerce")
-    close = close.dropna()
-    close = close[~close.index.duplicated(keep="last")]
+    return pd.to_numeric(close, errors="coerce").dropna().sort_index()
 
-    return close.sort_index()
+if st.button("Compare Models"):
+    try:
+        prices = get_prices(ticker)
 
-if st.button("Train Model and Predict"):
-    with st.spinner("Downloading data and training the model..."):
-        try:
-            prices = get_stock_data(ticker)
+        if len(prices) < 100:
+            st.error("Not enough historical data.")
+            st.stop()
 
-            if len(prices) < 100:
-                st.error("Not enough historical data to train the model.")
-                st.stop()
+        df = pd.DataFrame({"Close": prices})
 
-            # Create five previous-day price features
-            dataset = pd.DataFrame({"Close": prices})
+        for lag in range(1, 6):
+            df[f"Lag_{lag}"] = df["Close"].shift(lag)
 
-            for i in range(1, 6):
-                dataset[f"Lag_{i}"] = dataset["Close"].shift(i)
+        df = df.dropna()
+        features = [f"Lag_{i}" for i in range(1, 6)]
 
-            dataset = dataset.dropna()
+        X = df[features]
+        y = df["Close"]
 
-            feature_columns = [
-                f"Lag_{i}" for i in range(1, 6)
-            ]
+        split = int(len(df) * 0.8)
+        X_train, X_test = X.iloc[:split], X.iloc[split:]
+        y_train, y_test = y.iloc[:split], y.iloc[split:]
 
-            X = dataset[feature_columns]
-            y = dataset["Close"]
+        models = {
+            "Linear Regression": LinearRegression(),
+            "Ridge Regression": Ridge(alpha=1.0),
+            "Random Forest": RandomForestRegressor(
+                n_estimators=100,
+                min_samples_leaf=5,
+                random_state=42,
+                n_jobs=-1
+            )
+        }
 
-            # Keep the newest 20% for testing
-            split = int(len(dataset) * 0.8)
+        results = []
+        predictions_df = pd.DataFrame(index=y_test.index)
+        predictions_df["Actual"] = y_test
 
-            X_train = X.iloc[:split]
-            X_test = X.iloc[split:]
-            y_train = y.iloc[:split]
-            y_test = y.iloc[split:]
-
-            model = LinearRegression()
+        for name, model in models.items():
             model.fit(X_train, y_train)
+            pred = model.predict(X_test)
 
-            predictions = model.predict(X_test)
+            predictions_df[name] = pred
 
-            # Simple baseline: predict tomorrow equals today's price
-            baseline = X_test["Lag_1"].to_numpy()
+            results.append({
+                "Model": name,
+                "MAE": mean_absolute_error(y_test, pred),
+                "RMSE": np.sqrt(mean_squared_error(y_test, pred))
+            })
 
-            model_mae = mean_absolute_error(
-                y_test, predictions
-            )
-            model_rmse = np.sqrt(
-                mean_squared_error(y_test, predictions)
-            )
+        result_table = pd.DataFrame(results).sort_values("MAE")
 
-            baseline_mae = mean_absolute_error(
-                y_test, baseline
-            )
+        st.success("All three models trained successfully!")
+        st.subheader("Model Comparison")
+        st.dataframe(result_table, use_container_width=True)
 
-            actual_direction = np.sign(
-                y_test.to_numpy() - X_test["Lag_1"].to_numpy()
-            )
+        st.subheader("MAE Comparison")
+        st.bar_chart(result_table.set_index("Model")["MAE"])
 
-            predicted_direction = np.sign(
-                predictions - X_test["Lag_1"].to_numpy()
-            )
+        st.subheader("Actual vs Predicted Prices")
+        st.line_chart(predictions_df)
 
-            direction_accuracy = np.mean(
-                actual_direction == predicted_direction
-            ) * 100
+        best_name = result_table.iloc[0]["Model"]
+        st.write("Lowest test MAE:", best_name)
 
-            st.success("Model training and testing completed!")
+        st.download_button(
+            "Download Model Results",
+            result_table.to_csv(index=False).encode("utf-8"),
+            file_name="model_comparison.csv",
+            mime="text/csv"
+        )
 
-            st.subheader("Historical Closing Prices")
-            st.line_chart(prices)
+        st.caption(
+            "Lower MAE and RMSE indicate smaller errors on this test set. "
+            "Past performance does not guarantee future results."
+        )
 
-            st.subheader("Test Results")
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Model MAE", f"{model_mae:.2f}")
-            c2.metric("Model RMSE", f"{model_rmse:.2f}")
-            c3.metric(
-                "Direction Accuracy",
-                f"{direction_accuracy:.1f}%"
-            )
-
-            st.write(
-                "Baseline MAE (predicting no price change):",
-                round(baseline_mae, 2)
-            )
-
-            if model_mae < baseline_mae:
-                st.info(
-                    "The model had lower MAE than the baseline "
-                    "on this test period."
-                )
-            else:
-                st.info(
-                    "The model did not beat the baseline on MAE "
-                    "in this test period."
-                )
-
-            results = pd.DataFrame({
-                "Actual Price": y_test,
-                "Model Prediction": predictions,
-                "Baseline Prediction": baseline
-            }, index=y_test.index)
-
-            st.subheader("Actual vs Predicted Prices")
-            st.line_chart(results)
-
-            # Estimate the next trading day's closing price
-            latest_features = pd.DataFrame(
-                [[prices.iloc[-i] for i in range(1, 6)]],
-                columns=feature_columns
-            )
-
-            next_estimate = model.predict(latest_features)[0]
-
-            st.subheader("Experimental Next-Day Estimate")
-            st.metric(
-                "Estimated closing price",
-                f"₹{next_estimate:,.2f}"
-            )
-
-            st.caption(
-                "This is a model estimate, not a reliable forecast "
-                "or a recommendation to buy or sell."
-            )
-
-            st.download_button(
-                "Download Test Results (CSV)",
-                data=results.to_csv().encode("utf-8"),
-                file_name="stock_prediction_results.csv",
-                mime="text/csv"
-            )
-
-        except Exception as e:
-            st.error(f"Something went wrong: {e}")
-            st.info(
-                "Please take a screenshot of this error and send it."
-)
-            
+    except Exception as e:
+        st.error(f"Error: {e}")
+    
