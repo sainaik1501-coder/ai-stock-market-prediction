@@ -336,6 +336,142 @@ if st.button("Analyze Sentiment"):
             "financial recommendation. VADER may misread "
             "financial language, sarcasm, or context."
 )
-        
+     
+# ==========================================
+# DEEP LEARNING: LSTM STOCK MODEL
+# ==========================================
+
+st.divider()
+st.header("Deep Learning: LSTM Model")
+
+st.write(
+    "This model learns from sequences of 20 historical "
+    "closing prices to estimate the next price."
+)
+
+if st.button("Train LSTM Model"):
+    with st.spinner(
+        "Training the neural network. This may take several minutes..."
+    ):
+        try:
+            import tensorflow as tf
+            from sklearn.preprocessing import MinMaxScaler
+            from sklearn.metrics import mean_absolute_error
+            from tensorflow.keras.models import Sequential
+            from tensorflow.keras.layers import Input, LSTM, Dense
+            from tensorflow.keras.callbacks import EarlyStopping
+
+            tf.keras.utils.set_random_seed(42)
+
+            prices = get_prices(ticker)
+
+            if len(prices) < 150:
+                st.error("Not enough historical data for LSTM training.")
+                st.stop()
+
+            values = prices.to_numpy(dtype=float).reshape(-1, 1)
+
+            # Split chronologically before fitting the scaler
+            split = int(len(values) * 0.8)
+            train_values = values[:split]
+
+            scaler = MinMaxScaler()
+            scaler.fit(train_values)
+            scaled = scaler.transform(values)
+
+            window = 20
+            X, y = [], []
+
+            for i in range(window, len(scaled)):
+                X.append(scaled[i-window:i, 0])
+                y.append(scaled[i, 0])
+
+            X = np.array(X).reshape(-1, window, 1)
+            y = np.array(y)
+
+            train_end = split - window
+            X_train, X_test = X[:train_end], X[train_end:]
+            y_train, y_test = y[:train_end], y[train_end:]
+
+            if len(X_test) == 0:
+                st.error("Not enough test data.")
+                st.stop()
+
+            model = Sequential([
+                Input(shape=(window, 1)),
+                LSTM(32),
+                Dense(16, activation="relu"),
+                Dense(1)
+            ])
+
+            model.compile(
+                optimizer="adam",
+                loss="mean_squared_error"
+            )
+
+            early_stop = EarlyStopping(
+                monitor="val_loss",
+                patience=3,
+                restore_best_weights=True
+            )
+
+            model.fit(
+                X_train,
+                y_train,
+                epochs=20,
+                batch_size=32,
+                validation_split=0.1,
+                shuffle=False,
+                callbacks=[early_stop],
+                verbose=0
+            )
+
+            predicted_scaled = model.predict(X_test, verbose=0)
+
+            predicted = scaler.inverse_transform(predicted_scaled).ravel()
+            actual = scaler.inverse_transform(
+                y_test.reshape(-1, 1)
+            ).ravel()
+
+            lstm_mae = mean_absolute_error(actual, predicted)
+
+            st.success("LSTM training and testing completed!")
+            st.metric("LSTM Test MAE", f"₹{lstm_mae:.2f}")
+
+            comparison = pd.DataFrame({
+                "Actual Price": actual,
+                "LSTM Prediction": predicted
+            })
+
+            st.line_chart(comparison)
+
+            latest_sequence = scaled[-window:].reshape(1, window, 1)
+            next_scaled = model.predict(latest_sequence, verbose=0)
+            next_price = scaler.inverse_transform(next_scaled)[0, 0]
+
+            st.metric(
+                "Experimental LSTM next-day estimate",
+                f"₹{next_price:,.2f}"
+            )
+
+            st.download_button(
+                "Download LSTM Test Results",
+                data=comparison.to_csv(index=False).encode("utf-8"),
+                file_name="lstm_test_results.csv",
+                mime="text/csv"
+            )
+
+            st.caption(
+                "Experimental educational model only. "
+                "Predictions are uncertain and are not financial advice."
+            )
+
+        except Exception as e:
+            st.error(f"LSTM failed: {e}")
+            st.info(
+                "If TensorFlow fails to install or run, send me "
+                "a screenshot of the full error."
+)
+            
             
     
