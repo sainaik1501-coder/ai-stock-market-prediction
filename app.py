@@ -1505,6 +1505,8 @@ if st.button("Train SVR Model", key="train_svr_model_btn"):
             st.error(f"SVR model error: {e}")
 
 
+
+
             
             
     
