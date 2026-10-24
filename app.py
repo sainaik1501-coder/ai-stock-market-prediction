@@ -1508,5 +1508,155 @@ if st.button("Train SVR Model", key="train_svr_model_btn"):
 
 
             
+# ==========================================
+# STEP 17: HISTORICAL PORTFOLIO BACKTEST
+# ==========================================
+
+st.divider()
+st.header("Portfolio Optimization: Historical Backtest")
+
+st.write(
+    "This experiment tests an equally weighted portfolio of "
+    "Reliance, TCS, and Infosys on a later historical period."
+)
+
+st.warning(
+    "This is a historical simulation, not a live investment strategy. "
+    "Transaction costs, taxes, and slippage are not included."
+)
+
+if st.button(
+    "Run Portfolio Backtest",
+    key="run_equal_weight_backtest_btn"
+):
+    with st.spinner("Loading historical prices and running backtest..."):
+        try:
+            symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
+
+            price_data = pd.concat(
+                [
+                    get_prices(symbol).rename(symbol)
+                    for symbol in symbols
+                ],
+                axis=1
+            ).sort_index()
+
+            price_data = price_data.dropna()
+
+            if len(price_data) < 150:
+                st.error(
+                    "Not enough common historical data for the backtest."
+                )
+                st.stop()
+
+            # Calculate daily returns
+            daily_returns = price_data.pct_change().dropna()
+
+            # Keep the first 70% for historical development
+            split = int(len(daily_returns) * 0.7)
+            test_returns = daily_returns.iloc[split:].copy()
+
+            if len(test_returns) < 20:
+                st.error("The test period is too short.")
+                st.stop()
+
+            # Equal weight: one-third in each stock
+            weights = np.array([1 / 3, 1 / 3, 1 / 3])
+
+            # Daily rebalanced equal-weight portfolio
+            portfolio_returns = test_returns.dot(weights)
+
+            # Compare with the three individual stocks
+            initial_value = 100000
+
+            portfolio_value = (
+                1 + portfolio_returns
+            ).cumprod() * initial_value
+
+            stock_values = (
+                1 + test_returns
+            ).cumprod() * initial_value
+
+            portfolio_value.name = "Equal-Weight Portfolio"
+            stock_values.columns = [
+                "Reliance", "TCS", "Infosys"
+            ]
+
+            equity_curve = pd.concat(
+                [portfolio_value, stock_values],
+                axis=1
+            )
+
+            # Performance statistics based on test-period returns
+            total_return = (
+                portfolio_value.iloc[-1] / initial_value - 1
+            ) * 100
+
+            annual_return = (
+                (portfolio_value.iloc[-1] / initial_value)
+                ** (252 / len(portfolio_returns)) - 1
+            ) * 100
+
+            annual_volatility = (
+                portfolio_returns.std() * np.sqrt(252) * 100
+            )
+
+            if portfolio_returns.std() > 0:
+                sharpe = (
+                    portfolio_returns.mean()
+                    / portfolio_returns.std()
+                ) * np.sqrt(252)
+            else:
+                sharpe = np.nan
+
+            running_peak = portfolio_value.cummax()
+            drawdown = (
+                portfolio_value / running_peak - 1
+            ) * 100
+
+            max_drawdown = drawdown.min()
+
+            st.success("Historical backtest completed!")
+
+            st.caption(
+                f"Evaluation period: {test_returns.index[0].date()} "
+                f"to {test_returns.index[-1].date()}"
+            )
+
+            c1, c2 = st.columns(2)
+            c1.metric("Portfolio Ending Value", f"₹{portfolio_value.iloc[-1]:,.2f}")
+            c2.metric("Total Test Return", f"{total_return:.2f}%")
+
+            c3, c4 = st.columns(2)
+            c3.metric("Annualized Return", f"{annual_return:.2f}%")
+            c4.metric("Annualized Volatility", f"{annual_volatility:.2f}%")
+
+            c5, c6 = st.columns(2)
+            c5.metric("Annualized Sharpe Ratio", f"{sharpe:.2f}")
+            c6.metric("Maximum Drawdown", f"{max_drawdown:.2f}%")
+
+            st.subheader("Portfolio vs Individual Stocks")
+            st.line_chart(equity_curve)
+
+            st.subheader("Portfolio Drawdown")
+            st.line_chart(drawdown.rename("Drawdown (%)"))
+
+            st.download_button(
+                "Download Backtest Equity Curve",
+                equity_curve.to_csv().encode("utf-8"),
+                file_name="portfolio_backtest.csv",
+                mime="text/csv",
+                key="download_backtest_equity_curve_btn"
+            )
+
+            st.caption(
+                "Assumes daily rebalancing to equal weights and "
+                "fractional shares. Historical results are hypothetical; "
+                "they do not predict future returns."
+            )
+
+        except Exception as e:
+            st.error(f"Portfolio backtest error: {e}")
+
             
     
