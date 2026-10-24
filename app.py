@@ -795,7 +795,7 @@ st.write(
     "and chronological train/test split."
 )
 
-if st.button("Compare LSTM and GRU"):
+if st.button("Compare LSTM and GRU", key="compare_lstm_gru_btn"):
     with st.spinner("Training both models. Please wait..."):
         try:
             import tensorflow as tf
