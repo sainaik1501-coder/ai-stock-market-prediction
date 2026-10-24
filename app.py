@@ -1401,6 +1401,110 @@ if st.button(
         except Exception as e:
             st.error(f"Four-model comparison error: {e}")
 
+
+
+
+# ==========================================
+# STEP 15: CLASSICAL ML - SUPPORT VECTOR REGRESSION
+# ==========================================
+
+st.divider()
+st.header("Classical ML: Support Vector Regression (SVR)")
+
+st.write(
+    "SVR predicts stock closing prices using the previous "
+    "20 trading-day closing prices as input features."
+)
+
+if st.button("Train SVR Model", key="train_svr_model_btn"):
+    with st.spinner("Training SVR model. Please wait..."):
+        try:
+            from sklearn.svm import SVR
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+            prices = get_prices(ticker)
+
+            if len(prices) < 150:
+                st.error("Not enough historical data.")
+                st.stop()
+
+            values = prices.to_numpy(dtype=float)
+            window = 20
+
+            X, y = [], []
+
+            for i in range(window, len(values)):
+                X.append(values[i-window:i])
+                y.append(values[i])
+
+            X = np.array(X)
+            y = np.array(y)
+
+            split = int(len(X) * 0.8)
+
+            X_train, X_test = X[:split], X[split:]
+            y_train, y_test = y[:split], y[split:]
+
+            # Scale features using training data only
+            x_scaler = StandardScaler()
+            X_train_scaled = x_scaler.fit_transform(X_train)
+            X_test_scaled = x_scaler.transform(X_test)
+
+            # Scale target values using training data only
+            y_scaler = StandardScaler()
+            y_train_scaled = y_scaler.fit_transform(
+                y_train.reshape(-1, 1)
+            ).ravel()
+
+            model = SVR(
+                kernel="rbf",
+                C=10,
+                epsilon=0.1
+            )
+
+            model.fit(X_train_scaled, y_train_scaled)
+
+            scaled_predictions = model.predict(X_test_scaled)
+
+            predictions = y_scaler.inverse_transform(
+                scaled_predictions.reshape(-1, 1)
+            ).ravel()
+
+            mae = mean_absolute_error(y_test, predictions)
+            rmse = np.sqrt(mean_squared_error(y_test, predictions))
+
+            st.success("SVR training completed!")
+
+            col1, col2 = st.columns(2)
+            col1.metric("SVR Test MAE", f"₹{mae:.2f}")
+            col2.metric("SVR Test RMSE", f"₹{rmse:.2f}")
+
+            results = pd.DataFrame({
+                "Actual Price": y_test,
+                "SVR Prediction": predictions
+            })
+
+            st.line_chart(results)
+
+            st.download_button(
+                "Download SVR Results",
+                results.to_csv(index=False).encode("utf-8"),
+                file_name="svr_results.csv",
+                mime="text/csv",
+                key="download_svr_results_btn"
+            )
+
+            st.caption(
+                "SVR uses the previous 20 closing prices as features. "
+                "Results are historical test estimates, not guaranteed "
+                "future prices or financial advice."
+            )
+
+        except Exception as e:
+            st.error(f"SVR model error: {e}")
+
+
             
             
     
