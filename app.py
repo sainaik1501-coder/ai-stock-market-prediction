@@ -957,6 +957,139 @@ if st.button("Compare LSTM and GRU", key="compare_lstm_gru_btn"):
         except Exception as e:
             st.error(f"Comparison error: {e}")
 
+
+
+# ==========================================
+# STEP 12: DEEP LEARNING - 1D CNN MODEL
+# ==========================================
+
+st.divider()
+st.header("Deep Learning: 1D CNN Model")
+
+st.write(
+    "The CNN model learns short-term patterns from the "
+    "previous 20 trading-day closing prices."
+)
+
+if st.button("Train CNN Model", key="train_cnn_model_btn"):
+    with st.spinner("Training CNN model. Please wait..."):
+        try:
+            import tensorflow as tf
+            from sklearn.preprocessing import MinMaxScaler
+            from sklearn.metrics import mean_absolute_error
+            from tensorflow.keras.models import Sequential
+            from tensorflow.keras.layers import (
+                Input, Conv1D, MaxPooling1D,
+                Flatten, Dense
+            )
+            from tensorflow.keras.callbacks import EarlyStopping
+
+            tf.keras.utils.set_random_seed(42)
+
+            prices = get_prices(ticker)
+
+            if len(prices) < 150:
+                st.error("Not enough historical data.")
+                st.stop()
+
+            values = prices.to_numpy(dtype=float).reshape(-1, 1)
+            split = int(len(values) * 0.8)
+
+            scaler = MinMaxScaler()
+            scaler.fit(values[:split])
+            scaled = scaler.transform(values)
+
+            window = 20
+            X, y = [], []
+
+            for i in range(window, len(scaled)):
+                X.append(scaled[i-window:i, 0])
+                y.append(scaled[i, 0])
+
+            X = np.array(X).reshape(-1, window, 1)
+            y = np.array(y)
+
+            train_end = split - window
+
+            X_train, X_test = X[:train_end], X[train_end:]
+            y_train, y_test = y[:train_end], y[train_end:]
+
+            model = Sequential([
+                Input(shape=(window, 1)),
+                Conv1D(
+                    filters=32,
+                    kernel_size=3,
+                    activation="relu"
+                ),
+                MaxPooling1D(pool_size=2),
+                Flatten(),
+                Dense(32, activation="relu"),
+                Dense(1)
+            ])
+
+            model.compile(
+                optimizer="adam",
+                loss="mean_squared_error"
+            )
+
+            early_stop = EarlyStopping(
+                monitor="val_loss",
+                patience=3,
+                restore_best_weights=True
+            )
+
+            model.fit(
+                X_train,
+                y_train,
+                epochs=20,
+                batch_size=32,
+                validation_split=0.1,
+                shuffle=False,
+                callbacks=[early_stop],
+                verbose=0
+            )
+
+            scaled_predictions = model.predict(
+                X_test, verbose=0
+            )
+
+            predictions = scaler.inverse_transform(
+                scaled_predictions
+            ).ravel()
+
+            actual = scaler.inverse_transform(
+                y_test.reshape(-1, 1)
+            ).ravel()
+
+            mae = mean_absolute_error(actual, predictions)
+
+            st.success("CNN training completed!")
+            st.metric("CNN Test MAE", f"₹{mae:.2f}")
+
+            results = pd.DataFrame({
+                "Actual Price": actual,
+                "CNN Prediction": predictions
+            })
+
+            st.line_chart(results)
+
+            st.download_button(
+                "Download CNN Results",
+                results.to_csv(index=False).encode("utf-8"),
+                file_name="cnn_results.csv",
+                mime="text/csv",
+                key="download_cnn_results_btn"
+            )
+
+            st.caption(
+                "Educational experiment using historical prices. "
+                "This model does not guarantee future performance "
+                "and is not financial advice."
+            )
+
+        except Exception as e:
+            st.error(f"CNN model error: {e}")
+
             
             
             
