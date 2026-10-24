@@ -605,6 +605,182 @@ if st.button("Train GRU Model"):
 
         except Exception as e:
             st.error(f"GRU error: {e}")
+
+
+# ==========================================
+# STEP 11: LSTM vs GRU COMPARISON
+# ==========================================
+
+st.divider()
+st.header("LSTM vs GRU Model Comparison")
+
+st.write(
+    "Both models are trained using the same historical prices "
+    "and chronological train/test split."
+)
+
+if st.button("Compare LSTM and GRU"):
+    with st.spinner("Training both models. Please wait..."):
+        try:
+            import tensorflow as tf
+            from sklearn.preprocessing import MinMaxScaler
+            from sklearn.metrics import mean_absolute_error
+            from tensorflow.keras.models import Sequential
+            from tensorflow.keras.layers import Input, LSTM, GRU, Dense
+            from tensorflow.keras.callbacks import EarlyStopping
+
+            tf.keras.utils.set_random_seed(42)
+
+            prices = get_prices(ticker)
+
+            if len(prices) < 150:
+                st.error("Not enough historical data.")
+                st.stop()
+
+            values = prices.to_numpy(dtype=float).reshape(-1, 1)
+            split = int(len(values) * 0.8)
+
+            scaler = MinMaxScaler()
+            scaler.fit(values[:split])
+            scaled = scaler.transform(values)
+
+            window = 20
+            X, y = [], []
+
+            for i in range(window, len(scaled)):
+                X.append(scaled[i-window:i, 0])
+                y.append(scaled[i, 0])
+
+            X = np.array(X).reshape(-1, window, 1)
+            y = np.array(y)
+
+            train_end = split - window
+            X_train, X_test = X[:train_end], X[train_end:]
+            y_train, y_test = y[:train_end], y[train_end:]
+
+            early_stop = EarlyStopping(
+                monitor="val_loss",
+                patience=3,
+                restore_best_weights=True
+            )
+
+            # Train LSTM
+            lstm_model = Sequential([
+                Input(shape=(window, 1)),
+                LSTM(32),
+                Dense(16, activation="relu"),
+                Dense(1)
+            ])
+
+            lstm_model.compile(
+                optimizer="adam",
+                loss="mean_squared_error"
+            )
+
+            lstm_model.fit(
+                X_train, y_train,
+                epochs=20,
+                batch_size=32,
+                validation_split=0.1,
+                shuffle=False,
+                callbacks=[early_stop],
+                verbose=0
+            )
+
+            # Train GRU
+            gru_model = Sequential([
+                Input(shape=(window, 1)),
+                GRU(32),
+                Dense(16, activation="relu"),
+                Dense(1)
+            ])
+
+            gru_model.compile(
+                optimizer="adam",
+                loss="mean_squared_error"
+            )
+
+            gru_model.fit(
+                X_train, y_train,
+                epochs=20,
+                batch_size=32,
+                validation_split=0.1,
+                shuffle=False,
+                callbacks=[early_stop],
+                verbose=0
+            )
+
+            # Evaluate both models on the same test data
+            lstm_scaled = lstm_model.predict(X_test, verbose=0)
+            gru_scaled = gru_model.predict(X_test, verbose=0)
+
+            lstm_predictions = scaler.inverse_transform(
+                lstm_scaled
+            ).ravel()
+
+            gru_predictions = scaler.inverse_transform(
+                gru_scaled
+            ).ravel()
+
+            actual = scaler.inverse_transform(
+                y_test.reshape(-1, 1)
+            ).ravel()
+
+            lstm_mae = mean_absolute_error(
+                actual, lstm_predictions
+            )
+            gru_mae = mean_absolute_error(
+                actual, gru_predictions
+            )
+
+            comparison = pd.DataFrame({
+                "Model": ["LSTM", "GRU"],
+                "Test MAE (₹)": [lstm_mae, gru_mae]
+            })
+
+            st.success("Both models trained successfully!")
+
+            st.dataframe(
+                comparison,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.bar_chart(
+                comparison.set_index("Model")["Test MAE (₹)"]
+            )
+
+            if lstm_mae < gru_mae:
+                st.write("LSTM had the lower test MAE in this run.")
+            elif gru_mae < lstm_mae:
+                st.write("GRU had the lower test MAE in this run.")
+            else:
+                st.write("Both models had the same test MAE.")
+
+            results = pd.DataFrame({
+                "Actual Price": actual,
+                "LSTM Prediction": lstm_predictions,
+                "GRU Prediction": gru_predictions
+            })
+
+            st.line_chart(results)
+
+            st.download_button(
+                "Download LSTM vs GRU Results",
+                results.to_csv(index=False).encode("utf-8"),
+                file_name="lstm_gru_comparison.csv",
+                mime="text/csv"
+            )
+
+            st.caption(
+                "Historical test results only. Lower MAE does not "
+                "guarantee better future predictions. "
+                "This is an educational project, not financial advice."
+            )
+
+        except Exception as e:
+            st.error(f"Comparison error: {e}")
+
             
             
             
