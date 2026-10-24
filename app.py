@@ -1659,4 +1659,216 @@ if st.button(
             st.error(f"Portfolio backtest error: {e}")
 
             
+# ==========================================
+# STEP 18: OPTIMIZED PORTFOLIO BACKTEST
+# ==========================================
+
+st.divider()
+st.header("Optimized vs Equal-Weight Portfolio")
+
+st.write(
+    "Compare a maximum-Sharpe portfolio with an equal-weight "
+    "portfolio on the same unseen historical test period."
+)
+
+if st.button(
+    "Run Optimized Portfolio Backtest",
+    key="run_optimized_backtest_btn"
+):
+    with st.spinner("Optimizing portfolio and running backtest..."):
+        try:
+            from scipy.optimize import minimize
+
+            symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
+
+            price_data = pd.concat(
+                [
+                    get_prices(symbol).rename(symbol)
+                    for symbol in symbols
+                ],
+                axis=1
+            ).sort_index().dropna()
+
+            if len(price_data) < 150:
+                st.error("Not enough common historical data.")
+                st.stop()
+
+            daily_returns = price_data.pct_change().dropna()
+
+            split = int(len(daily_returns) * 0.7)
+            train_returns = daily_returns.iloc[:split]
+            test_returns = daily_returns.iloc[split:]
+
+            if len(train_returns) < 30 or len(test_returns) < 20:
+                st.error("Not enough data for a reliable comparison.")
+                st.stop()
+
+            # Estimate weights using training data only
+            mean_returns = train_returns.mean().to_numpy()
+            covariance = train_returns.cov().to_numpy()
+
+            def negative_sharpe(weights):
+                portfolio_mean = np.dot(weights, mean_returns)
+                portfolio_volatility = np.sqrt(
+                    max(weights @ covariance @ weights, 1e-12)
+                )
+
+                # Risk-free rate assumed to be zero
+                return -portfolio_mean / portfolio_volatility
+
+            initial_weights = np.repeat(1 / len(symbols), len(symbols))
+
+            constraints = [
+                {"type": "eq", "fun": lambda w: np.sum(w) - 1}
+            ]
+
+            # Long-only weights, capped at 70% per stock
+            bounds = [(0.0, 0.7) for _ in symbols]
+
+            optimization = minimize(
+                negative_sharpe,
+                initial_weights,
+                method="SLSQP",
+                bounds=bounds,
+                constraints=constraints,
+                options={"maxiter": 1000, "ftol": 1e-9}
+            )
+
+            if not optimization.success:
+                st.error(
+                    "Portfolio optimization did not converge: "
+                    + optimization.message
+                )
+                st.stop()
+
+            optimized_weights = optimization.x
+            optimized_weights = optimized_weights / optimized_weights.sum()
+
+            # Evaluate both strategies on the same test dates
+            optimized_daily = test_returns.dot(optimized_weights)
+            equal_weight_daily = test_returns.mean(axis=1)
+
+            initial_value = 100000
+
+            optimized_value = (
+                1 + optimized_daily
+            ).cumprod() * initial_value
+
+            equal_weight_value = (
+                1 + equal_weight_daily
+            ).cumprod() * initial_value
+
+            optimized_total_return = (
+                optimized_value.iloc[-1] / initial_value - 1
+            ) * 100
+
+            equal_total_return = (
+                equal_weight_value.iloc[-1] / initial_value - 1
+            ) * 100
+
+            optimized_volatility = (
+                optimized_daily.std() * np.sqrt(252) * 100
+            )
+
+            equal_volatility = (
+                equal_weight_daily.std() * np.sqrt(252) * 100
+            )
+
+            optimized_sharpe = (
+                optimized_daily.mean() / optimized_daily.std() * np.sqrt(252)
+                if optimized_daily.std() > 0 else np.nan
+            )
+
+            equal_sharpe = (
+                equal_weight_daily.mean() / equal_weight_daily.std() * np.sqrt(252)
+                if equal_weight_daily.std() > 0 else np.nan
+            )
+
+            optimized_drawdown = (
+                optimized_value / optimized_value.cummax() - 1
+            ).min() * 100
+
+            equal_drawdown = (
+                equal_weight_value / equal_weight_value.cummax() - 1
+            ).min() * 100
+
+            st.success("Optimized portfolio backtest completed!")
+
+            st.caption(
+                f"Test period: {test_returns.index[0].date()} "
+                f"to {test_returns.index[-1].date()}"
+            )
+
+            st.subheader("Optimized Portfolio Weights")
+            weight_table = pd.DataFrame({
+                "Stock": symbols,
+                "Optimized Weight (%)": optimized_weights * 100,
+                "Equal Weight (%)": np.repeat(100 / len(symbols), len(symbols))
+            })
+
+            st.dataframe(
+                weight_table.round(2),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.subheader("Test Performance Comparison")
+
+            comparison = pd.DataFrame({
+                "Strategy": ["Optimized", "Equal Weight"],
+                "Total Return (%)": [
+                    optimized_total_return, equal_total_return
+                ],
+                "Annualized Volatility (%)": [
+                    optimized_volatility, equal_volatility
+                ],
+                "Annualized Sharpe Ratio": [
+                    optimized_sharpe, equal_sharpe
+                ],
+                "Maximum Drawdown (%)": [
+                    optimized_drawdown, equal_drawdown
+                ]
+            })
+
+            st.dataframe(
+                comparison.round(3),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            equity_curves = pd.DataFrame({
+                "Optimized Portfolio": optimized_value,
+                "Equal-Weight Portfolio": equal_weight_value
+            })
+
+            st.subheader("Portfolio Growth from ₹1,00,000")
+            st.line_chart(equity_curves)
+
+            st.download_button(
+                "Download Strategy Comparison",
+                comparison.to_csv(index=False).encode("utf-8"),
+                file_name="optimized_vs_equal_weight.csv",
+                mime="text/csv",
+                key="download_optimized_comparison_btn"
+            )
+
+            st.download_button(
+                "Download Optimized Weights",
+                weight_table.to_csv(index=False).encode("utf-8"),
+                file_name="optimized_portfolio_weights.csv",
+                mime="text/csv",
+                key="download_optimized_weights_btn"
+            )
+
+            st.caption(
+                "Weights are estimated using training-period returns only. "
+                "The test period is held out for evaluation. Assumes fixed "
+                "weights with daily portfolio returns; transaction costs, "
+                "taxes, slippage and execution constraints are excluded. "
+                "Past performance does not predict future results."
+            )
+
+        except Exception as e:
+            st.error(f"Optimized backtest error: {e}")
+
     
