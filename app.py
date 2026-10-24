@@ -1212,6 +1212,195 @@ if st.button("Train Simple RNN Model", key="train_simple_rnn_btn"):
             st.error(f"Simple RNN model error: {e}")
 
             
+# ==========================================
+# STEP 14: COMPARE ALL FOUR DEEP LEARNING MODELS
+# ==========================================
+
+st.divider()
+st.header("Deep Learning Models: Final Comparison")
+
+st.write(
+    "Compare LSTM, GRU, 1D CNN, and Simple RNN using "
+    "the same stock data and chronological test period."
+)
+
+if st.button(
+    "Compare All Four Models",
+    key="compare_all_four_dl_models_btn"
+):
+    with st.spinner("Training four models. This may take a few minutes..."):
+        try:
+            import tensorflow as tf
+            from sklearn.preprocessing import MinMaxScaler
+            from sklearn.metrics import mean_absolute_error
+            from tensorflow.keras.models import Sequential
+            from tensorflow.keras.layers import (
+                Input, LSTM, GRU, SimpleRNN,
+                Conv1D, MaxPooling1D, Flatten, Dense
+            )
+            from tensorflow.keras.callbacks import EarlyStopping
+
+            tf.keras.utils.set_random_seed(42)
+
+            prices = get_prices(ticker)
+
+            if len(prices) < 150:
+                st.error("Not enough historical data.")
+                st.stop()
+
+            values = prices.to_numpy(dtype=float).reshape(-1, 1)
+            split = int(len(values) * 0.8)
+
+            scaler = MinMaxScaler()
+            scaler.fit(values[:split])
+            scaled = scaler.transform(values)
+
+            window = 20
+            X, y = [], []
+
+            for i in range(window, len(scaled)):
+                X.append(scaled[i-window:i, 0])
+                y.append(scaled[i, 0])
+
+            X = np.array(X).reshape(-1, window, 1)
+            y = np.array(y)
+
+            train_end = split - window
+            X_train, X_test = X[:train_end], X[train_end:]
+            y_train, y_test = y[:train_end], y[train_end:]
+
+            actual = scaler.inverse_transform(
+                y_test.reshape(-1, 1)
+            ).ravel()
+
+            model_builders = {
+                "LSTM": lambda: Sequential([
+                    Input(shape=(window, 1)),
+                    LSTM(32),
+                    Dense(16, activation="relu"),
+                    Dense(1)
+                ]),
+                "GRU": lambda: Sequential([
+                    Input(shape=(window, 1)),
+                    GRU(32),
+                    Dense(16, activation="relu"),
+                    Dense(1)
+                ]),
+                "1D CNN": lambda: Sequential([
+                    Input(shape=(window, 1)),
+                    Conv1D(32, 3, activation="relu"),
+                    MaxPooling1D(2),
+                    Flatten(),
+                    Dense(32, activation="relu"),
+                    Dense(1)
+                ]),
+                "Simple RNN": lambda: Sequential([
+                    Input(shape=(window, 1)),
+                    SimpleRNN(32),
+                    Dense(16, activation="relu"),
+                    Dense(1)
+                ])
+            }
+
+            comparison_rows = []
+            prediction_columns = {"Actual Price": actual}
+
+            for name, build_model in model_builders.items():
+                tf.keras.backend.clear_session()
+
+                model = build_model()
+                model.compile(
+                    optimizer="adam",
+                    loss="mean_squared_error"
+                )
+
+                early_stop = EarlyStopping(
+                    monitor="val_loss",
+                    patience=3,
+                    restore_best_weights=True
+                )
+
+                model.fit(
+                    X_train,
+                    y_train,
+                    epochs=20,
+                    batch_size=32,
+                    validation_split=0.1,
+                    shuffle=False,
+                    callbacks=[early_stop],
+                    verbose=0
+                )
+
+                scaled_pred = model.predict(X_test, verbose=0)
+
+                predicted = scaler.inverse_transform(
+                    scaled_pred
+                ).ravel()
+
+                mae = mean_absolute_error(actual, predicted)
+
+                comparison_rows.append({
+                    "Model": name,
+                    "Test MAE (₹)": round(float(mae), 2)
+                })
+
+                prediction_columns[name + " Prediction"] = predicted
+
+            comparison = pd.DataFrame(comparison_rows)
+            comparison = comparison.sort_values("Test MAE (₹)")
+
+            st.success("All four models trained successfully!")
+
+            st.subheader("Test Performance")
+            st.dataframe(
+                comparison,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.subheader("MAE Comparison")
+            st.bar_chart(
+                comparison.set_index("Model")["Test MAE (₹)"]
+            )
+
+            st.subheader("Actual vs Predicted Prices")
+            predictions_df = pd.DataFrame(prediction_columns)
+            st.line_chart(predictions_df)
+
+            best_model = comparison.iloc[0]["Model"]
+            best_mae = comparison.iloc[0]["Test MAE (₹)"]
+
+            st.write(
+                f"Lowest test MAE in this run: {best_model} "
+                f"(₹{best_mae:.2f})."
+            )
+
+            st.download_button(
+                "Download Four-Model Comparison",
+                comparison.to_csv(index=False).encode("utf-8"),
+                file_name="four_model_comparison.csv",
+                mime="text/csv",
+                key="download_four_model_comparison_btn"
+            )
+
+            st.download_button(
+                "Download All Test Predictions",
+                predictions_df.to_csv(index=False).encode("utf-8"),
+                file_name="four_model_predictions.csv",
+                mime="text/csv",
+                key="download_four_model_predictions_btn"
+            )
+
+            st.caption(
+                "This comparison uses one historical test period. "
+                "The lowest MAE does not guarantee future success. "
+                "No transaction costs are included. Educational use only; "
+                "not financial advice."
+            )
+
+        except Exception as e:
+            st.error(f"Four-model comparison error: {e}")
+
             
             
     
