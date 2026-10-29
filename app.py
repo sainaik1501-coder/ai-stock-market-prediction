@@ -1872,5 +1872,125 @@ if st.button(
             st.error(f"Optimized backtest error: {e}")
 
 
+# STEP 20: FINANCIAL NEWS SENTIMENT ANALYSIS
+
+import requests
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+st.divider()
+st.header("Financial News Sentiment")
+st.caption(
+    "Educational sentiment analysis. NewsAPI's free Developer plan "
+    "may provide articles delayed by approximately 24 hours."
+)
+
+news_query = st.text_input(
+    "Search financial news",
+    value="Reliance Industries OR Indian stock market",
+    key="financial_news_search_step20"
+)
+
+if st.button("Fetch Financial News", key="fetch_financial_news_step20"):
+    try:
+        news_api_key = st.secrets.get("NEWSAPI_KEY", "")
+
+        if not news_api_key:
+            st.error(
+                "NewsAPI key not found. Add NEWSAPI_KEY in "
+                "Streamlit app Secrets."
+            )
+        else:
+            with st.spinner("Fetching financial headlines..."):
+                response = requests.get(
+                    "https://newsapi.org/v2/everything",
+                    params={
+                        "q": news_query,
+                        "language": "en",
+                        "sortBy": "publishedAt",
+                        "pageSize": 10,
+                        "apiKey": news_api_key,
+                    },
+                    timeout=20,
+                )
+                response.raise_for_status()
+                news_data = response.json()
+
+            if news_data.get("status") != "ok":
+                st.error("NewsAPI could not return the requested news.")
+            else:
+                articles = news_data.get("articles", [])
+                analyzer = SentimentIntensityAnalyzer()
+                scores = []
+
+                if not articles:
+                    st.info("No articles found. Try another search.")
+                else:
+                    for article in articles:
+                        title = article.get("title") or "Untitled article"
+                        description = article.get("description") or ""
+                        text_to_analyze = title + ". " + description
+                        compound = analyzer.polarity_scores(
+                            text_to_analyze
+                        )["compound"]
+
+                        if compound >= 0.05:
+                            sentiment = "Positive"
+                        elif compound <= -0.05:
+                            sentiment = "Negative"
+                        else:
+                            sentiment = "Neutral"
+
+                        scores.append(compound)
+
+                        st.subheader(title)
+                        st.write("Sentiment:", sentiment)
+                        st.write("Sentiment score:", round(compound, 3))
+
+                        source = article.get("source", {}).get(
+                            "name", "Unknown source"
+                        )
+                        published = article.get(
+                            "publishedAt", "Date unavailable"
+                        )
+                        st.caption(
+                            "Source: " + source + " | Published: " + published
+                        )
+
+                        url = article.get("url")
+                        if url:
+                            st.markdown("[Read article](" + url + ")")
+
+                        st.divider()
+
+                    average_score = sum(scores) / len(scores)
+                    st.metric(
+                        "Average headline sentiment",
+                        round(average_score, 3),
+                    )
+
+                    if average_score >= 0.05:
+                        st.write("Overall headline tone: Positive")
+                    elif average_score <= -0.05:
+                        st.write("Overall headline tone: Negative")
+                    else:
+                        st.write("Overall headline tone: Neutral")
+
+                    st.caption(
+                        "This is a basic text-based estimate, not a "
+                        "reliable prediction of stock prices."
+                    )
+
+    except requests.exceptions.RequestException:
+        st.error(
+            "Could not connect to NewsAPI. Check your internet connection "
+            "and NewsAPI account or request limits."
+        )
+    except Exception as error:
+        st.error(
+            "News section could not run. Check the app logs for details."
+        )
+
+
+
 
     
