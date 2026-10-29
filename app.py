@@ -1871,4 +1871,6 @@ if st.button(
         except Exception as e:
             st.error(f"Optimized backtest error: {e}")
 
+
+vaderSentiment.vaderSentiment
     
