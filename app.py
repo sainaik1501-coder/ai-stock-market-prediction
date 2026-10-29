@@ -1872,5 +1872,5 @@ if st.button(
             st.error(f"Optimized backtest error: {e}")
 
 
-vaderSentiment.vaderSentiment
+
     
