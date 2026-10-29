@@ -11,3 +11,5 @@ vaderSentiment
 
 tensorflow
 
+requests
+vaderSentiment
